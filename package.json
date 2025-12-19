@@ -1,0 +1,26 @@
+{
+  "name": "cash-app-pay",
+  "version": "1.0.0",
+  "description": "Cash App Pay application with frontend and backend",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install && cd client && npm install && cd ../server && npm install",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd server && npm run dev",
+    "client": "cd client && npm start",
+    "build": "cd client && npm run build",
+    "start:server": "cd server && npm start",
+    "start:client": "cd client && npm start"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "keywords": [
+    "stripe",
+    "cash-app",
+    "payment"
+  ],
+  "author": "",
+  "license": "MIT"
+}
+

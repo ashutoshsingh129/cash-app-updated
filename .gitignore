@@ -1,0 +1,84 @@
+# ========================
+# Node.js
+# ========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ========================
+# Merchant Onboarding (Ignore entire folder)
+# ========================
+merchant-onboarding/
+merchant-onboarding/**
+
+# ========================
+# Environment variables (NEVER COMMIT)
+# ========================
+.env
+.env.*
+!.env.example
+
+# ========================
+# Build outputs
+# ========================
+# React
+build/
+dist/
+
+# Next.js (if used)
+.next/
+out/
+
+# Vite
+.vite/
+
+# ========================
+# Coverage & logs
+# ========================
+coverage/
+logs/
+*.log
+
+# ========================
+# Cache & temp files
+# ========================
+.cache/
+.tmp/
+.temp/
+
+# ========================
+# OS files
+# ========================
+.DS_Store
+Thumbs.db
+
+# ========================
+# IDE / Editor
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ========================
+# Testing
+# ========================
+jest-cache/
+cypress/videos/
+cypress/screenshots/
+
+# ========================
+# Database
+# ========================
+*.sqlite
+*.db
+
+# ========================
+# Misc
+# ========================
+*.tgz

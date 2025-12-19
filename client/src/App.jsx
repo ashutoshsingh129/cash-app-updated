@@ -1,0 +1,297 @@
+import { useState, useMemo } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { Container, Box } from "@mui/material";
+import PaymentForm from "./components/PaymentForm/PaymentForm";
+import StatusMessage from "./components/StatusMessage/StatusMessage";
+import QRCodeDisplay from "./components/QRCodeDisplay/QRCodeDisplay";
+import Login from "./components/Login/Login";
+import ProtectedRoute from "./components/ProtectedRoute/ProtectedRoute";
+import { useConnectedAccounts } from "./hooks/useConnectedAccounts";
+import { usePaymentPolling } from "./hooks/usePaymentPolling";
+import { useMobileDevice } from "./hooks/useMobileDevice";
+import { useQRCodeTimer } from "./hooks/useQRCodeTimer";
+import { useAuth } from "./context/AuthContext";
+import { callStripe } from "./services/stripeApi";
+import { formatExpiresAt } from "./utils/formatters";
+
+function App() {
+  const [stripeSecretKey, setStripeSecretKey] = useState("");
+  const [amount, setAmount] = useState("10.00");
+  const [currency, setCurrency] = useState("usd");
+  const [routingType, setRoutingType] = useState("connected");
+  const [selectedAccount, setSelectedAccount] = useState("");
+  const [isPaying, setIsPaying] = useState(false);
+  const [qrImage, setQrImage] = useState("");
+  const [qrExpiresAt, setQrExpiresAt] = useState(null);
+  const [redirectUrl, setRedirectUrl] = useState("");
+  const [paymentIntentId, setPaymentIntentId] = useState("");
+  const [status, setStatus] = useState("");
+  const [statusType, setStatusType] = useState("info");
+
+  const isMobile = useMobileDevice();
+  const timeRemaining = useQRCodeTimer(qrExpiresAt);
+
+  const {
+    connectedAccounts,
+    connectedAccountsLoading,
+    connectedAccountsError,
+  } = useConnectedAccounts(stripeSecretKey);
+
+  usePaymentPolling(paymentIntentId, routingType, stripeSecretKey, setStatus, setStatusType);
+
+  const selectedAccountLabel = useMemo(() => {
+    return connectedAccounts.find((a) => a.id === selectedAccount)?.label || "";
+  }, [selectedAccount, connectedAccounts]);
+
+  const handlePay = async () => {
+    if (!stripeSecretKey || !stripeSecretKey.startsWith("sk_")) {
+      alert("Please enter your Stripe test secret key.");
+      return;
+    }
+
+    if (routingType === "connected" && !selectedAccount) {
+      alert("Please choose a connected account.");
+      return;
+    }
+
+    const numericAmount = Number(amount);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      alert("Enter a valid amount.");
+      return;
+    }
+
+    const amountInSmallestUnit = Math.round(numericAmount * 100);
+
+    setIsPaying(true);
+    setStatusType("info");
+    setStatus("Creating Cash App PaymentIntent on Stripe...");
+    setQrImage("");
+    setQrExpiresAt(null);
+    setRedirectUrl("");
+    setPaymentIntentId("");
+
+    try {
+      const paymentIntentBody = {
+        amount: String(amountInSmallestUnit),
+        currency,
+        "payment_method_types[]": "cashapp",
+        statement_descriptor: "Cash App Payment",
+        statement_descriptor_suffix: "CashAppPay",
+      };
+
+      if (routingType === "connected" && selectedAccount) {
+        paymentIntentBody.on_behalf_of = selectedAccount;
+      }
+
+      console.log("Creating PaymentIntent with body:", paymentIntentBody);
+      console.log("Routing type:", routingType);
+      if (routingType === "connected") {
+        console.log("Selected connected account:", selectedAccount);
+      } else {
+        console.log("Routing to platform account (master account)");
+      }
+
+      const startTime = Date.now();
+
+      const pi = await callStripe(
+        "/payment_intents",
+        {
+        method: "POST",
+        body: paymentIntentBody,
+        },
+        stripeSecretKey
+      );
+
+      console.log(
+        "PaymentIntent created successfully in",
+        Date.now() - startTime,
+        "ms"
+      );
+      console.log("PaymentIntent ID:", pi.id);
+      console.log("PaymentIntent status:", pi.status);
+
+      setStatus("Confirming Cash App payment and generating QR code...");
+
+      const returnUrl = `${
+        window.location.origin
+      }${window.location.pathname.replace(/\/$/, "")}/cash-app-return`;
+      console.log("Using return_url:", returnUrl);
+
+      const confirmed = await callStripe(
+        `/payment_intents/${pi.id}/confirm`,
+        {
+        method: "POST",
+        body: {
+          "payment_method_data[type]": "cashapp",
+          return_url: returnUrl,
+          },
+        },
+        stripeSecretKey
+      );
+
+      console.log("PaymentIntent confirmed:", {
+        id: confirmed.id,
+        status: confirmed.status,
+        next_action_type: confirmed.next_action?.type,
+      });
+
+      setPaymentIntentId(confirmed.id);
+
+      const nextAction = confirmed.next_action;
+
+      if (
+        nextAction &&
+        nextAction.type === "cashapp_handle_redirect_or_display_qr_code" &&
+        nextAction.cashapp_handle_redirect_or_display_qr_code
+      ) {
+        const cashAppAction = nextAction.cashapp_handle_redirect_or_display_qr_code;
+
+        if (cashAppAction.qr_code) {
+          const qrCode = cashAppAction.qr_code;
+          setQrImage(qrCode.image_url_png);
+          setQrExpiresAt(qrCode.expires_at);
+          console.log("QR code expiration timestamp:", qrCode.expires_at);
+          console.log("QR code expires at:", formatExpiresAt(qrCode.expires_at));
+        }
+
+        const redirectUrlValue = 
+          cashAppAction.hosted_voucher_url || 
+          cashAppAction.redirect_url || 
+          cashAppAction.url ||
+          cashAppAction.mobile_url;
+        
+        if (redirectUrlValue) {
+          setRedirectUrl(redirectUrlValue);
+          console.log("Redirect URL set:", redirectUrlValue);
+        } else {
+          console.warn(
+            "No redirect URL found in cashAppAction. Available fields:",
+            Object.keys(cashAppAction)
+          );
+          console.warn(
+            "Full cashAppAction:",
+            JSON.stringify(cashAppAction, null, 2)
+          );
+        }
+
+        console.log("Full cashAppAction:", JSON.stringify(cashAppAction, null, 2));
+        console.log("Device detection:", {
+          isMobile,
+          hasQRCode: !!cashAppAction.qr_code,
+          hasRedirectUrl: !!cashAppAction.hosted_voucher_url,
+          userAgent: navigator.userAgent,
+          windowWidth: window.innerWidth,
+          isTouchDevice: "ontouchstart" in window,
+        });
+
+        setStatusType("info");
+        
+        if (isMobile && cashAppAction.hosted_voucher_url) {
+          setStatus(
+            "Cash App payment ready! Click the link below to complete the payment. Waiting for payment..."
+          );
+        } else if (!isMobile && cashAppAction.qr_code) {
+          setStatus(
+            "Ask the customer to scan the Cash App QR code with their mobile device. Waiting for payment..."
+          );
+        } else if (cashAppAction.qr_code && cashAppAction.hosted_voucher_url) {
+          setStatus(
+            isMobile
+              ? "Cash App payment ready! Click the link below to complete the payment. Waiting for payment..."
+              : "Cash App payment ready! Scan the QR code with your mobile device. Waiting for payment..."
+          );
+        } else if (cashAppAction.qr_code) {
+          setStatus(
+            isMobile
+              ? "Cash App payment ready! A payment link should appear below. If not, please check the console for details."
+              : "Ask the customer to scan the Cash App QR code. Waiting for payment..."
+          );
+        } else if (cashAppAction.hosted_voucher_url) {
+          setStatus(
+            "Cash App payment ready! Click the link below to complete the payment. Waiting for payment..."
+          );
+        } else {
+          setStatusType("error");
+          setStatus("No Cash App payment method returned from Stripe.");
+        }
+      } else {
+        setStatusType("error");
+        setStatus("No Cash App payment method returned from Stripe.");
+      }
+    } catch (err) {
+      setStatusType("error");
+      setStatus(err.message || "Unexpected error while creating payment.");
+    } finally {
+      setIsPaying(false);
+    }
+  };
+
+
+  const CashAppPayPage = () => (
+    <Box
+      sx={{
+        minHeight: "100vh",
+        backgroundColor: "background.default",
+        py: 4,
+      }}
+    >
+      <Container maxWidth="md">
+        <PaymentForm
+          stripeSecretKey={stripeSecretKey}
+          setStripeSecretKey={setStripeSecretKey}
+          amount={amount}
+          setAmount={setAmount}
+          currency={currency}
+          setCurrency={setCurrency}
+          routingType={routingType}
+          setRoutingType={setRoutingType}
+          connectedAccounts={connectedAccounts}
+          selectedAccount={selectedAccount}
+          setSelectedAccount={setSelectedAccount}
+          connectedAccountsLoading={connectedAccountsLoading}
+          connectedAccountsError={connectedAccountsError}
+          selectedAccountLabel={selectedAccountLabel}
+          isPaying={isPaying}
+          onPay={handlePay}
+        />
+        <StatusMessage status={status} statusType={statusType} />
+        <QRCodeDisplay
+          qrImage={qrImage}
+          redirectUrl={redirectUrl}
+          qrExpiresAt={qrExpiresAt}
+          timeRemaining={timeRemaining}
+          paymentIntentId={paymentIntentId}
+          isMobile={isMobile}
+        />
+      </Container>
+    </Box>
+  );
+
+  const { login, isAuthenticated } = useAuth();
+
+  return (
+    <Routes>
+      <Route
+        path="/login"
+        element={
+          isAuthenticated ? (
+            <Navigate to="/" replace />
+          ) : (
+            <Login onLogin={login} />
+          )
+        }
+      />
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <CashAppPayPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+export default App;

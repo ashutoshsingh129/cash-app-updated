@@ -1,0 +1,33 @@
+{
+  "name": "cash-app-pay-backend",
+  "version": "1.0.0",
+  "description": "Backend API for Cash App Pay with Stripe integration",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "setup-users": "node scripts/setupUsers.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "keywords": [
+    "stripe",
+    "cash-app",
+    "api"
+  ],
+  "author": "",
+  "license": "MIT"
+}
+
