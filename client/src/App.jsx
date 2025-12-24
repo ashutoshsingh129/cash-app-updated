@@ -9,9 +9,9 @@ import ProtectedRoute from "./components/ProtectedRoute/ProtectedRoute";
 import StripeKeysForm from "./components/StripeKeysForm/StripeKeysForm";
 import Navbar from "./components/Navbar/Navbar";
 import { useConnectedAccounts } from "./hooks/useConnectedAccounts";
-import { usePaymentPolling } from "./hooks/usePaymentPolling";
+// Payment polling disabled - QR code is displayed once without status checking
+// import { usePaymentPolling } from "./hooks/usePaymentPolling";
 import { useMobileDevice } from "./hooks/useMobileDevice";
-import { useQRCodeTimer } from "./hooks/useQRCodeTimer";
 import { useStripeKeys } from "./hooks/useStripeKeys";
 import { useAuth } from "./context/AuthContext";
 import { callStripe } from "./services/stripeApi";
@@ -23,22 +23,14 @@ function App() {
   const [routingType, setRoutingType] = useState("connected");
   const [selectedAccount, setSelectedAccount] = useState("");
   const [isPaying, setIsPaying] = useState(false);
-  const [qrImage, setQrImage] = useState("");
   const [qrImageBase64, setQrImageBase64] = useState("");
   const [qrExpiresAt, setQrExpiresAt] = useState(null);
   const [redirectUrl, setRedirectUrl] = useState("");
   const [paymentIntentId, setPaymentIntentId] = useState("");
   const [status, setStatus] = useState("");
   const [statusType, setStatusType] = useState("info");
-  
-  // Memoize QR image to prevent re-renders from causing image reloads
-  const stableQrImage = useMemo(() => qrImage, [qrImage]);
 
   const isMobile = useMobileDevice();
-  const timeRemaining = useQRCodeTimer(qrExpiresAt);
-  
-  // Memoize QR image to prevent unnecessary re-renders
-  const memoizedQrImage = useMemo(() => qrImage, [qrImage]);
 
   const {
     stripeSecretKey,
@@ -54,7 +46,8 @@ function App() {
     connectedAccountsError,
   } = useConnectedAccounts(stripeSecretKey || "");
 
-  usePaymentPolling(paymentIntentId, routingType, stripeSecretKey || "", setStatus, setStatusType);
+  // Payment polling disabled - QR code is displayed once and no status checking is done
+  // usePaymentPolling(paymentIntentId, routingType, stripeSecretKey || "", setStatus, setStatusType);
 
   const selectedAccountLabel = useMemo(() => {
     return connectedAccounts.find((a) => a.id === selectedAccount)?.label || "";
@@ -86,7 +79,6 @@ function App() {
     setIsPaying(true);
     setStatusType("info");
     setStatus("Creating Cash App PaymentIntent on Stripe...");
-    setQrImage("");
     setQrImageBase64("");
     setQrExpiresAt(null);
     setRedirectUrl("");
@@ -171,30 +163,14 @@ function App() {
         if (cashAppAction.qr_code) {
           const qrCode = cashAppAction.qr_code;
           const imageUrl = qrCode.image_url_png;
-          setQrImage(imageUrl);
           setQrExpiresAt(qrCode.expires_at);
           console.log("QR code expiration timestamp:", qrCode.expires_at);
           console.log("QR code expires at:", formatExpiresAt(qrCode.expires_at));
           
-          // Convert QR code image to Base64 once to prevent repeated network requests
-          fetch(imageUrl)
-            .then(response => response.blob())
-            .then(blob => {
-              return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
-              });
-            })
-            .then(base64 => {
-              setQrImageBase64(base64);
-              console.log("QR code converted to Base64");
-            })
-            .catch(error => {
-              console.error("Error converting QR code to Base64:", error);
-              // Fallback to URL if Base64 conversion fails
-            });
+          // Use the QR code URL directly - the component will lock it and prevent reloads
+          // This avoids CORS issues with fetch/canvas conversion
+          setQrImageBase64(imageUrl);
+          console.log("QR code URL set - component will display it once without reloading");
         }
 
         const redirectUrlValue = 
@@ -229,29 +205,30 @@ function App() {
 
         setStatusType("info");
         
+        // Set status message - no polling, just display QR code once
         if (isMobile && cashAppAction.hosted_voucher_url) {
           setStatus(
-            "Cash App payment ready! Click the link below to complete the payment. Waiting for payment..."
+            "Cash App payment ready! Click the link below to complete the payment."
           );
         } else if (!isMobile && cashAppAction.qr_code) {
           setStatus(
-            "Ask the customer to scan the Cash App QR code with their mobile device. Waiting for payment..."
+            "QR code generated. Ask the customer to scan the Cash App QR code with their mobile device."
           );
         } else if (cashAppAction.qr_code && cashAppAction.hosted_voucher_url) {
           setStatus(
             isMobile
-              ? "Cash App payment ready! Click the link below to complete the payment. Waiting for payment..."
-              : "Cash App payment ready! Scan the QR code with your mobile device. Waiting for payment..."
+              ? "Cash App payment ready! Click the link below to complete the payment."
+              : "QR code generated. Scan the QR code with your mobile device."
           );
         } else if (cashAppAction.qr_code) {
           setStatus(
             isMobile
-              ? "Cash App payment ready! A payment link should appear below. If not, please check the console for details."
-              : "Ask the customer to scan the Cash App QR code. Waiting for payment..."
+              ? "Cash App payment ready! A payment link should appear below."
+              : "QR code generated. Ask the customer to scan the Cash App QR code."
           );
         } else if (cashAppAction.hosted_voucher_url) {
           setStatus(
-            "Cash App payment ready! Click the link below to complete the payment. Waiting for payment..."
+            "Cash App payment ready! Click the link below to complete the payment."
           );
         } else {
           setStatusType("error");
@@ -349,10 +326,9 @@ function App() {
               onPay={handlePay}
             />
             <QRCodeDisplay
-              qrImage={qrImageBase64 || stableQrImage}
+              qrImage={qrImageBase64}
               redirectUrl={redirectUrl}
               qrExpiresAt={qrExpiresAt}
-              timeRemaining={timeRemaining}
               paymentIntentId={paymentIntentId}
               isMobile={isMobile}
             />
