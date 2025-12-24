@@ -1,23 +1,9 @@
 const crypto = require('crypto');
 
-const generateEncryptionKey = () => {
-  return crypto.randomBytes(32);
-};
-
-const getEncryptionKey = () => {
-  const envKey = process.env.ENCRYPTION_KEY;
-  if (envKey) {
-    if (envKey.length === 64) {
-      return Buffer.from(envKey, 'hex');
-    }
-    return Buffer.from(envKey);
-  }
-
-  console.warn('No ENCRYPTION_KEY found in environment. Generating a new key for this session.');
-  return generateEncryptionKey();
-};
-
-const ENCRYPTION_KEY = getEncryptionKey();
+// Hardcoded encryption key (64-character hex string = 32 bytes)
+// This key is used for AES-256-CBC encryption/decryption of sensitive data
+const ENCRYPTION_KEY_HEX = 'ed0f497f55636b615f08052014a98867b8acb8d601806f49f2bd6733eaabbae3';
+const ENCRYPTION_KEY = Buffer.from(ENCRYPTION_KEY_HEX, 'hex');
 
 const encrypt = (text) => {
   try {
@@ -124,6 +110,5 @@ module.exports = {
   decrypt,
   validateStripeKey,
   validateStripeKeysWithAPI,
-  generateEncryptionKey,
 };
 

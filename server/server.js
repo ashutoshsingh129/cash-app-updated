@@ -127,21 +127,35 @@ const startServer = async () => {
 
           if (result.rows.length > 0) {
             let loadedCount = 0;
+            let failedCount = 0;
             for (const row of result.rows) {
               const {
                 user_id,
                 secret_key: encryptedSecretKey,
                 publishable_key,
               } = row;
-              const decryptedSecretKey = decrypt(encryptedSecretKey);
-              stripeKeysCache.updateUserKeys(
-                user_id,
-                decryptedSecretKey,
-                publishable_key
-              );
-              loadedCount++;
+              try {
+                const decryptedSecretKey = decrypt(encryptedSecretKey);
+                stripeKeysCache.updateUserKeys(
+                  user_id,
+                  decryptedSecretKey,
+                  publishable_key
+                );
+                loadedCount++;
+              } catch (decryptError) {
+                failedCount++;
+                console.warn(`Failed to decrypt keys for user ${user_id}. This may happen if ENCRYPTION_KEY environment variable was not set consistently. Keys will need to be re-entered.`);
+              }
             }
-            console.log(`Stripe keys loaded into cache for ${loadedCount} user(s)`);
+            if (loadedCount > 0) {
+              console.log(`Stripe keys loaded into cache for ${loadedCount} user(s)`);
+            }
+            if (failedCount > 0) {
+              console.warn(`Failed to load keys for ${failedCount} user(s). Please re-enter the keys.`);
+              if (!process.env.ENCRYPTION_KEY) {
+                console.warn('⚠️  ENCRYPTION_KEY environment variable is not set. This causes encryption keys to change on each server restart, making encrypted data unrecoverable. Please set ENCRYPTION_KEY to a fixed 64-character hex string.');
+              }
+            }
           } else {
             console.log("No active Stripe keys found in database");
           }

@@ -153,7 +153,17 @@ router.post('/keys/load-cache', async (req, res) => {
       }
 
       const { secret_key: encryptedSecretKey, publishable_key } = result.rows[0];
-      const decryptedSecretKey = decrypt(encryptedSecretKey);
+      let decryptedSecretKey;
+      try {
+        decryptedSecretKey = decrypt(encryptedSecretKey);
+      } catch (decryptError) {
+        console.error('Failed to decrypt secret key:', decryptError.message);
+        return res.status(500).json({
+          success: false,
+          error: 'Decryption failed',
+          message: 'Failed to decrypt stored keys. This may happen if ENCRYPTION_KEY environment variable was not set consistently. Please re-enter your keys.',
+        });
+      }
       const cacheUpdated = stripeKeysCache.updateKeys(userId, decryptedSecretKey, publishable_key);
 
       res.json({
@@ -190,13 +200,21 @@ const ensureKeysInCache = async (userId) => {
       if (result.rows.length === 0) {
         return { secretKey: null };
       }
-      const decryptedSecretKey = decrypt(result.rows[0].secret_key);
-      stripeKeysCache.updateKeys(userId, decryptedSecretKey, result.rows[0].publishable_key);
-      return { secretKey: decryptedSecretKey };
+      try {
+        const decryptedSecretKey = decrypt(result.rows[0].secret_key);
+        stripeKeysCache.updateKeys(userId, decryptedSecretKey, result.rows[0].publishable_key);
+        return { secretKey: decryptedSecretKey };
+      } catch (decryptError) {
+        console.warn(`Failed to decrypt keys for user ${userId}. Keys may have been encrypted with a different key.`);
+        // Mark these keys as inactive so they don't keep failing
+        await client.query('UPDATE stripe_keys SET is_active = false WHERE user_id = $1 AND is_active = true', [userId]);
+        return { secretKey: null };
+      }
     } finally {
       client.release();
     }
   } catch (e) {
+    console.error('Error ensuring keys in cache:', e.message);
     return { secretKey: null };
   }
 };

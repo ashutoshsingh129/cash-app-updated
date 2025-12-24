@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, AlertTitle } from '@mui/material';
+import { Alert, Box } from '@mui/material';
 
 const StatusMessage = ({ status, statusType }) => {
   if (!status) return null;
@@ -8,7 +8,9 @@ const StatusMessage = ({ status, statusType }) => {
 
   return (
     <Alert severity={severity} sx={{ mt: 2 }}>
-      {status}
+      <Box>
+        {status}
+      </Box>
     </Alert>
   );
 };

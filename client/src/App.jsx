@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Container, Box, CircularProgress, Alert } from "@mui/material";
 import PaymentForm from "./components/PaymentForm/PaymentForm";
@@ -24,14 +24,21 @@ function App() {
   const [selectedAccount, setSelectedAccount] = useState("");
   const [isPaying, setIsPaying] = useState(false);
   const [qrImage, setQrImage] = useState("");
+  const [qrImageBase64, setQrImageBase64] = useState("");
   const [qrExpiresAt, setQrExpiresAt] = useState(null);
   const [redirectUrl, setRedirectUrl] = useState("");
   const [paymentIntentId, setPaymentIntentId] = useState("");
   const [status, setStatus] = useState("");
   const [statusType, setStatusType] = useState("info");
+  
+  // Memoize QR image to prevent re-renders from causing image reloads
+  const stableQrImage = useMemo(() => qrImage, [qrImage]);
 
   const isMobile = useMobileDevice();
   const timeRemaining = useQRCodeTimer(qrExpiresAt);
+  
+  // Memoize QR image to prevent unnecessary re-renders
+  const memoizedQrImage = useMemo(() => qrImage, [qrImage]);
 
   const {
     stripeSecretKey,
@@ -60,6 +67,9 @@ function App() {
       return;
     }
 
+    // Clear any previous payment state
+    setPaymentIntentId("");
+
     if (routingType === "connected" && !selectedAccount) {
       alert("Please choose a connected account.");
       return;
@@ -77,6 +87,7 @@ function App() {
     setStatusType("info");
     setStatus("Creating Cash App PaymentIntent on Stripe...");
     setQrImage("");
+    setQrImageBase64("");
     setQrExpiresAt(null);
     setRedirectUrl("");
     setPaymentIntentId("");
@@ -159,10 +170,31 @@ function App() {
 
         if (cashAppAction.qr_code) {
           const qrCode = cashAppAction.qr_code;
-          setQrImage(qrCode.image_url_png);
+          const imageUrl = qrCode.image_url_png;
+          setQrImage(imageUrl);
           setQrExpiresAt(qrCode.expires_at);
           console.log("QR code expiration timestamp:", qrCode.expires_at);
           console.log("QR code expires at:", formatExpiresAt(qrCode.expires_at));
+          
+          // Convert QR code image to Base64 once to prevent repeated network requests
+          fetch(imageUrl)
+            .then(response => response.blob())
+            .then(blob => {
+              return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+            })
+            .then(base64 => {
+              setQrImageBase64(base64);
+              console.log("QR code converted to Base64");
+            })
+            .catch(error => {
+              console.error("Error converting QR code to Base64:", error);
+              // Fallback to URL if Base64 conversion fails
+            });
         }
 
         const redirectUrlValue = 
@@ -316,14 +348,17 @@ function App() {
               isPaying={isPaying}
               onPay={handlePay}
             />
-            <StatusMessage status={status} statusType={statusType} />
             <QRCodeDisplay
-              qrImage={qrImage}
+              qrImage={qrImageBase64 || stableQrImage}
               redirectUrl={redirectUrl}
               qrExpiresAt={qrExpiresAt}
               timeRemaining={timeRemaining}
               paymentIntentId={paymentIntentId}
               isMobile={isMobile}
+            />
+            <StatusMessage 
+              status={status} 
+              statusType={statusType}
             />
           </Container>
         </Box>

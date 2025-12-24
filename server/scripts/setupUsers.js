@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const { pool } = require("../config/database");
+const { encryptPassword } = require("../utils/passwordEncryption");
 
 const setupUsers = async () => {
   const client = await pool.connect();
@@ -43,7 +44,8 @@ const setupUsers = async () => {
       );
 
       if (existingUser.rows.length === 0) {
-        const hashedPassword = await bcrypt.hash(userData.password, 10);
+        const encryptedPassword = encryptPassword(userData.password);
+        const hashedPassword = await bcrypt.hash(encryptedPassword, 10);
 
         await client.query(
           "INSERT INTO users (email, password, name, role) VALUES ($1, $2, $3, $4)",
@@ -53,7 +55,17 @@ const setupUsers = async () => {
         console.log(`✅ User created: ${userData.email} (${userData.name})`);
         createdCount++;
       } else {
-        console.log(`ℹ️  User already exists: ${userData.email}`);
+        // Update existing user password to use new deterministic encryption
+        console.log(`🔄 Updating password for existing user: ${userData.email}`);
+        const encryptedPassword = encryptPassword(userData.password);
+        const hashedPassword = await bcrypt.hash(encryptedPassword, 10);
+        
+        await client.query(
+          "UPDATE users SET password = $1, updated_at = CURRENT_TIMESTAMP WHERE email = $2",
+          [hashedPassword, userData.email]
+        );
+        
+        console.log(`✅ Password updated: ${userData.email}`);
         existingCount++;
       }
     }

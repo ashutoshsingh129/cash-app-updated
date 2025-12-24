@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { pool } = require('../config/database');
+const { encryptPassword } = require('../utils/passwordEncryption');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
@@ -56,7 +57,26 @@ const login = async (req, res) => {
 
       const user = result.rows[0];
 
-      const isValidPassword = await bcrypt.compare(password, user.password);
+      // Try both new (encrypted then hashed) and old (directly hashed) password formats for backward compatibility
+      const encryptedPassword = encryptPassword(password);
+      let isValidPassword = await bcrypt.compare(encryptedPassword, user.password);
+      
+      // If new format doesn't work, try old format (for users created before encryption was added)
+      if (!isValidPassword) {
+        isValidPassword = await bcrypt.compare(password, user.password);
+        
+        // If old format works, upgrade the password to new format in the background
+        if (isValidPassword) {
+          const newEncryptedPassword = encryptPassword(password);
+          const newHashedPassword = await bcrypt.hash(newEncryptedPassword, 10);
+          await client.query(
+            'UPDATE users SET password = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+            [newHashedPassword, user.id]
+          );
+          console.log(`Password upgraded to encrypted format for user: ${user.email}`);
+        }
+      }
+      
       if (!isValidPassword) {
         return res.status(401).json({
           success: false,
