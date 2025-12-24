@@ -22,8 +22,6 @@ import {
 import { PaymentFormStyles } from './PaymentForm.styles';
 
 const PaymentForm = ({
-  stripeSecretKey,
-  setStripeSecretKey,
   amount,
   setAmount,
   currency,
@@ -50,17 +48,6 @@ const PaymentForm = ({
             Frontend-only demo. Choose whether funds go to your platform account
             or a connected account via Stripe Connect.
           </Typography>
-
-          <TextField
-            fullWidth
-            label="Stripe Secret Key"
-            type="password"
-            value={stripeSecretKey}
-            onChange={(e) => setStripeSecretKey(e.target.value)}
-            placeholder="sk_test_..."
-            margin="normal"
-            helperText="Enter your Stripe platform secret key. This must be your PLATFORM secret key so we can list connected accounts."
-          />
 
           <FormControl component="fieldset" margin="normal" fullWidth>
             <FormLabel component="legend">Payment routing</FormLabel>

@@ -1,21 +1,23 @@
 import { useState, useMemo } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
-import { Container, Box } from "@mui/material";
+import { Container, Box, CircularProgress, Alert } from "@mui/material";
 import PaymentForm from "./components/PaymentForm/PaymentForm";
 import StatusMessage from "./components/StatusMessage/StatusMessage";
 import QRCodeDisplay from "./components/QRCodeDisplay/QRCodeDisplay";
 import Login from "./components/Login/Login";
 import ProtectedRoute from "./components/ProtectedRoute/ProtectedRoute";
+import StripeKeysForm from "./components/StripeKeysForm/StripeKeysForm";
+import Navbar from "./components/Navbar/Navbar";
 import { useConnectedAccounts } from "./hooks/useConnectedAccounts";
 import { usePaymentPolling } from "./hooks/usePaymentPolling";
 import { useMobileDevice } from "./hooks/useMobileDevice";
 import { useQRCodeTimer } from "./hooks/useQRCodeTimer";
+import { useStripeKeys } from "./hooks/useStripeKeys";
 import { useAuth } from "./context/AuthContext";
 import { callStripe } from "./services/stripeApi";
 import { formatExpiresAt } from "./utils/formatters";
 
 function App() {
-  const [stripeSecretKey, setStripeSecretKey] = useState("");
   const [amount, setAmount] = useState("10.00");
   const [currency, setCurrency] = useState("usd");
   const [routingType, setRoutingType] = useState("connected");
@@ -32,12 +34,20 @@ function App() {
   const timeRemaining = useQRCodeTimer(qrExpiresAt);
 
   const {
+    stripeSecretKey,
+    hasKeys,
+    loading: keysLoading,
+    error: keysError,
+    refreshKeys,
+  } = useStripeKeys();
+
+  const {
     connectedAccounts,
     connectedAccountsLoading,
     connectedAccountsError,
-  } = useConnectedAccounts(stripeSecretKey);
+  } = useConnectedAccounts(stripeSecretKey || "");
 
-  usePaymentPolling(paymentIntentId, routingType, stripeSecretKey, setStatus, setStatusType);
+  usePaymentPolling(paymentIntentId, routingType, stripeSecretKey || "", setStatus, setStatusType);
 
   const selectedAccountLabel = useMemo(() => {
     return connectedAccounts.find((a) => a.id === selectedAccount)?.label || "";
@@ -45,7 +55,8 @@ function App() {
 
   const handlePay = async () => {
     if (!stripeSecretKey || !stripeSecretKey.startsWith("sk_")) {
-      alert("Please enter your Stripe test secret key.");
+      setStatusType("error");
+      setStatus("Please configure your Stripe keys first.");
       return;
     }
 
@@ -227,45 +238,98 @@ function App() {
   };
 
 
-  const CashAppPayPage = () => (
-    <Box
-      sx={{
-        minHeight: "100vh",
-        backgroundColor: "background.default",
-        py: 4,
-      }}
-    >
-      <Container maxWidth="md">
-        <PaymentForm
-          stripeSecretKey={stripeSecretKey}
-          setStripeSecretKey={setStripeSecretKey}
-          amount={amount}
-          setAmount={setAmount}
-          currency={currency}
-          setCurrency={setCurrency}
-          routingType={routingType}
-          setRoutingType={setRoutingType}
-          connectedAccounts={connectedAccounts}
-          selectedAccount={selectedAccount}
-          setSelectedAccount={setSelectedAccount}
-          connectedAccountsLoading={connectedAccountsLoading}
-          connectedAccountsError={connectedAccountsError}
-          selectedAccountLabel={selectedAccountLabel}
-          isPaying={isPaying}
-          onPay={handlePay}
-        />
-        <StatusMessage status={status} statusType={statusType} />
-        <QRCodeDisplay
-          qrImage={qrImage}
-          redirectUrl={redirectUrl}
-          qrExpiresAt={qrExpiresAt}
-          timeRemaining={timeRemaining}
-          paymentIntentId={paymentIntentId}
-          isMobile={isMobile}
-        />
-      </Container>
-    </Box>
-  );
+  const CashAppPayPage = () => {
+    if (keysLoading) {
+      return (
+        <>
+          <Navbar />
+          <Box
+            sx={{
+              minHeight: "calc(100vh - 64px)",
+              backgroundColor: "background.default",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <CircularProgress />
+          </Box>
+        </>
+      );
+    }
+
+    if (!hasKeys) {
+      return (
+        <>
+          <Navbar />
+          <Box
+            sx={{
+              minHeight: "calc(100vh - 64px)",
+              backgroundColor: "background.default",
+              py: 4,
+            }}
+          >
+            <Container maxWidth="md">
+              {keysError && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {keysError}
+                </Alert>
+              )}
+              <StripeKeysForm
+                onSuccess={() => {
+                  refreshKeys();
+                }}
+                onError={(error) => {
+                  console.error("Error saving keys:", error);
+                }}
+              />
+            </Container>
+          </Box>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <Navbar />
+        <Box
+          sx={{
+            minHeight: "calc(100vh - 64px)",
+            backgroundColor: "background.default",
+            py: 4,
+          }}
+        >
+          <Container maxWidth="md">
+            <PaymentForm
+              amount={amount}
+              setAmount={setAmount}
+              currency={currency}
+              setCurrency={setCurrency}
+              routingType={routingType}
+              setRoutingType={setRoutingType}
+              connectedAccounts={connectedAccounts}
+              selectedAccount={selectedAccount}
+              setSelectedAccount={setSelectedAccount}
+              connectedAccountsLoading={connectedAccountsLoading}
+              connectedAccountsError={connectedAccountsError}
+              selectedAccountLabel={selectedAccountLabel}
+              isPaying={isPaying}
+              onPay={handlePay}
+            />
+            <StatusMessage status={status} statusType={statusType} />
+            <QRCodeDisplay
+              qrImage={qrImage}
+              redirectUrl={redirectUrl}
+              qrExpiresAt={qrExpiresAt}
+              timeRemaining={timeRemaining}
+              paymentIntentId={paymentIntentId}
+              isMobile={isMobile}
+            />
+          </Container>
+        </Box>
+      </>
+    );
+  };
 
   const { login, isAuthenticated } = useAuth();
 

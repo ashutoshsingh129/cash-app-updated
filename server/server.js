@@ -5,11 +5,15 @@ const rateLimit = require("express-rate-limit");
 require("dotenv").config();
 
 const authRoutes = require("./routes/auth");
+const stripeKeysRoutes = require("./routes/stripeKeys");
 const {
   testConnection,
   initializeDatabase,
+  pool,
 } = require("./config/database");
 const { setupUsers } = require("./scripts/setupUsers");
+const stripeKeysCache = require("./utils/stripeKeysCache");
+const { decrypt } = require("./utils/encryption");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -63,6 +67,7 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 app.use("/api/auth", authRoutes);
+app.use("/api/stripe", stripeKeysRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "OK", timestamp: new Date().toISOString() });
@@ -111,6 +116,44 @@ const startServer = async () => {
         error.message
       );
     }
+
+    const loadKeysIntoCache = async () => {
+      try {
+        const client = await pool.connect();
+        try {
+          const result = await client.query(
+            "SELECT user_id, secret_key, publishable_key FROM stripe_keys WHERE is_active = true"
+          );
+
+          if (result.rows.length > 0) {
+            let loadedCount = 0;
+            for (const row of result.rows) {
+              const {
+                user_id,
+                secret_key: encryptedSecretKey,
+                publishable_key,
+              } = row;
+              const decryptedSecretKey = decrypt(encryptedSecretKey);
+              stripeKeysCache.updateUserKeys(
+                user_id,
+                decryptedSecretKey,
+                publishable_key
+              );
+              loadedCount++;
+            }
+            console.log(`Stripe keys loaded into cache for ${loadedCount} user(s)`);
+          } else {
+            console.log("No active Stripe keys found in database");
+          }
+        } finally {
+          client.release();
+        }
+      } catch (error) {
+        console.error("Error loading keys into cache:", error.message);
+      }
+    };
+
+    await loadKeysIntoCache();
 
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
