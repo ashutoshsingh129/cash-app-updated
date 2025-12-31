@@ -203,6 +203,81 @@ Content-Type: application/json
 }
 ```
 
+**Common 400 Error Responses:**
+
+1. **Missing Required Fields:**
+```json
+{
+  "success": false,
+  "error": "Missing required fields",
+  "message": "Both secret_key and publishable_key are required"
+}
+```
+
+2. **Invalid Secret Key Format:**
+```json
+{
+  "success": false,
+  "error": "Invalid secret key format",
+  "message": "Secret key must start with sk_test_ or sk_live_"
+}
+```
+
+3. **Invalid Publishable Key Format:**
+```json
+{
+  "success": false,
+  "error": "Invalid publishable key format",
+  "message": "Publishable key must start with pk_test_ or pk_live_"
+}
+```
+
+4. **Stripe API Validation Failed:**
+```json
+{
+  "success": false,
+  "error": "Authentication failed",
+  "message": "Invalid secret key. Please check your Stripe secret key."
+}
+```
+
+**Troubleshooting 400 Errors:**
+
+1. **Check Request Body:**
+   - Ensure both `secret_key` and `publishable_key` are included
+   - Verify Content-Type header is `application/json`
+   - Check that keys are not empty strings
+
+2. **Verify Key Formats:**
+   - Secret key must start with `sk_test_` (test mode) or `sk_live_` (live mode)
+   - Publishable key must start with `pk_test_` (test mode) or `pk_live_` (live mode)
+   - Remove any extra whitespace or newlines
+
+3. **Verify Authentication:**
+   - Ensure you're sending a valid JWT token in the Authorization header
+   - Format: `Authorization: Bearer <your-token>`
+   - Token must not be expired
+
+4. **Test Keys with Stripe:**
+   - Verify keys are valid by testing them directly with Stripe API
+   - Ensure keys match (test keys with test keys, live keys with live keys)
+   - Check Stripe Dashboard to confirm keys are active
+
+5. **Check Server Logs:**
+   - Look for detailed error messages in server console
+   - Check for Stripe API validation errors
+
+**Example Correct Request:**
+```bash
+curl -X POST http://localhost:5000/api/stripe/keys \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -d '{
+    "secret_key": "sk_test_51AbCdEfGhIjKlMnOpQrStUvWxYz1234567890",
+    "publishable_key": "pk_test_51AbCdEfGhIjKlMnOpQrStUvWxYz1234567890"
+  }'
+```
+
 **Notes:**
 - Keys are validated with Stripe API before saving
 - Previous active keys for the user are automatically deactivated

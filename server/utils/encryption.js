@@ -56,7 +56,20 @@ const validateStripeKey = (key, type) => {
 
 const validateStripeKeysWithAPI = async (secretKey, publishableKey) => {
   try {
-    const stripe = require('stripe')(secretKey);
+    let stripe;
+    try {
+      stripe = require('stripe')(secretKey);
+    } catch (requireError) {
+      if (requireError.code === 'MODULE_NOT_FOUND') {
+        console.error('Stripe module not found. Please run: npm install stripe');
+        return {
+          isValid: false,
+          error: 'Stripe module not installed',
+          message: 'The stripe package is not installed. Please run "npm install stripe" in the server directory and restart the server.'
+        };
+      }
+      throw requireError;
+    }
     const account = await stripe.accounts.retrieve();
 
     if (account && account.id) {
